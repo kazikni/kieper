@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta
+            name="viewport"
+            content="
+                width=device-width,
+                height=device-height,
+                initial-scale=1.0,
+                maximum-scale=1.0,
+                minimum-scale=1.0,
+                user-scalable=no,
+                viewport-fit=cover
+            "
+        />
+        <meta name="description" content=".IO Game Inspirated By Diep.io Powered By SMDE"/>
+    
+        <meta property="og:title" content="kieper.io"/>
+        <meta property="og:description" content=".IO Game Inspirated By Diep.io Powered By SMDE" />
+        <meta property="og:image" content="/img/menu/embed.png">
+        <title>Kieper.io</title>
+        <script type="module" src="./src/scripts/main/main.ts" async></script>
+        <script src="/scripts/extra_elements.js"></script>
+        <link rel="stylesheet" href="/scripts/extra_elements.css">
+    </head>
+    <body>
+        <div id="game">
+            <canvas id="game-canvas" class="game-canvas" draggable="false"></canvas>
+            <p id="fps-view" class="span-detailed"></p>
+        </div>
+        <div id="ui" class="fill-screen" style="opacity: 0; ">
+            <div id="top-center">
+                <button class="button-icon" id="button-open-attributes">Q</button>
+                <div id="attributes"></div>
+                <div id="evolutions"></div>
+                <button class="button-icon" id="button-open-evolutions">E</button>
+            </div>
+            <div id="bars">
+                <div id="level-bar-container">
+                    <div id="level-bar"></div>
+                    <p class="span"></p>
+                </div>
+                <div id="score-bar-container">
+                    <div id="score-bar"></div>
+                    <p class="span"></p>
+                </div>
+            </div>
+            <div id="game-mobile-ui">
+                <kl-joystick id="left-joystick"></kl-joystick>
+                <kl-joystick id="right-joystick"></kl-joystick>
+            </div>
+        </div>
+        <div id="menu">
+            <div id="game-input">
+                <p id="game-title">Kieper.io</p>
+                <input id="name-input" class="text-input" placeholder="name"/>
+                <button id="play-button" class="menu-button">Enter</button>
+            </div>
+            <div id="info">
+                <a href="https://youtube.com/@kazikni" target="_blank" class="social-link">
+                    <i class="social-icon youtube"></i>
+                </a>
+                <a href="https://discord.gg/7czkBvtmSU" target="_blank" class="social-link">
+                    <i class="social-icon discord"></i>
+                </a>
+            </div>
+        </div>
+    </body>
+</html>

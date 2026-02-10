@@ -1,0 +1,30 @@
+{
+    "engine": {
+        "version": "@latest",
+        "path": "common/engine",
+        "source": "https://smde.io/files/smde"
+    },
+    "task":{
+        "dev":{
+            "childs":{
+                "client":{
+                    "task":"cd client & smde run vite"
+                },
+                "game":{
+                    "task":"cd server & deno run --watch -A ./src/game/main.ts"
+                }
+            }
+        },
+        "run": {
+            "task":"smde run",
+            "childs":{
+                "client":{
+                    "task":"cd client & smde run vite"
+                },
+                "game":{
+                    "task":"cd server & deno run --watch -A ./src/game/main.ts"
+                }
+            }
+        }
+    }
+}

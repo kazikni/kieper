@@ -1,0 +1,7 @@
+{
+    "lock": true,
+    "importMap": "./common/deps.json",
+    "compilerOptions": {
+        "lib": ["dom", "deno.ns"]
+    }
+}

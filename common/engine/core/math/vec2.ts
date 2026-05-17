@@ -1,7 +1,6 @@
-import { Angle, DegAngle, Orientation, RadAngle } from "./geometry.ts"
+import { Angle, DegAngle, Orientation, PolarMovement, RadAngle } from "./geometry.ts"
 import { random, SeededRandom } from "./random.ts"
 
-export type HashVec2=bigint
 export interface Vec2{
     x:number
     y:number
@@ -13,14 +12,26 @@ export class Vec2M implements Vec2{
     _y:number
 
     get x():number{return this._x}
-    set x(val:number){this._x=val;this.on_set()}
+    set x(val:number){
+        if(this._x!=val){
+            this._x=val
+            this.on_set()
+        }
+    }
     get y():number{return this._y}
-    set y(val:number){this._y=val;this.on_set()}
+    set y(val:number){
+        if(this._y!=val){
+            this._y=val
+            this.on_set()
+        }
+    }
 
     set(x:number,y:number){
-        this._x=x
-        this._y=y
-        this.on_set()
+        if(this._x!=x||this._y!=y){
+            this._x=x
+            this._y=y
+            this.on_set()
+        }
     }
 
     constructor(x:number,y:number,on_set:()=>void=()=>{}){
@@ -71,24 +82,42 @@ export const v2m=Object.freeze({
     floor(a: Vec2) {a.x=Math.floor(a.x);a.y=Math.floor(a.y)},
     ceil(a: Vec2) {a.x=Math.ceil(a.x);a.y=Math.ceil(a.y)},
 
+    add_rotate_RadAngle(out:Vec2,a:Vec2,b:Vec2,angle:RadAngle){
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        out.x = a.x+(b.x * cos - b.y * sin)
+        out.y = a.y+(b.x * sin + b.y * cos)
+    },
+
+    add_rotate_DegAngle(out:Vec2,a:Vec2,b:Vec2,angle:RadAngle){
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        out.x = a.x+(b.x * cos - b.y * sin)
+        out.y = a.y+(b.x * sin + b.y * cos)
+    },
     rotate_RadAngle(vec: Vec2, angle: RadAngle) {
         const cos = Math.cos(angle)
         const sin = Math.sin(angle)
-        const x = vec.x
-        const y = vec.y
-        vec.x = x * cos - y * sin
-        vec.y = x * sin + y * cos
+        const x=vec.x
+        const y=vec.y
+        vec.x=x * cos - y * sin
+        vec.y=x * sin + y * cos
     },
     rotate_DegAngle(vec:Vec2,angle:DegAngle) {
-        const a=Angle.deg2rad(angle)
-        const cos = Math.cos(a)
-        const sin = Math.sin(a)
-        const x = vec.x
-        const y = vec.y
+        angle=Angle.deg2rad(angle)
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        const x=vec.x
+        const y=vec.y
         vec.x=x * cos - y * sin
         vec.y=x * sin + y * cos
     },
 
+    max_decimal(vec:Vec2,decimalPlaces:number){
+        const factor = Math.pow(10, decimalPlaces)
+        vec.x=Math.round(vec.x * factor) / factor
+        vec.y=Math.round(vec.y * factor) / factor
+    },
     neg(vec:Vec2){
         vec.x=-vec.x
         vec.y=-vec.y
@@ -133,6 +162,15 @@ export const v2 = Object.assign((x: number, y: number): Vec2 => ({ x, y }),{
     one:Object.assign(()=>{
         return {x:1,y:1} as Vec2
     },{x:1,y:1}),
+    half_one:Object.assign(()=>{
+        return {x:0.5,y:0.5} as Vec2
+    },{x:0.5,y:0.5}),
+    infinity:Object.assign(()=>{
+        return {x:Infinity,y:Infinity} as Vec2
+    },{x:Infinity,y:Infinity}),
+    infinity_neg:Object.assign(()=>{
+        return {x:-Infinity,y:-Infinity} as Vec2
+    },{x:-Infinity,y:-Infinity}),
     sided(side:Orientation):Vec2{
         switch(side){
             case 0:
@@ -194,16 +232,16 @@ export const v2 = Object.assign((x: number, y: number): Vec2 => ({ x, y }),{
         let xOffset: number, yOffset: number;
         switch (side) {
             case 1:
-                xOffset = y.y;
-                yOffset = -y.x;
+                xOffset = -y.y;
+                yOffset = y.x;
                 break;
             case 2:
                 xOffset = -y.x;
                 yOffset = -y.y;
                 break;
             case 3:
-                xOffset = -y.y;
-                yOffset = y.x;
+                xOffset = y.y;
+                yOffset = -y.x;
                 break;
         }
         return this.add(x, v2(xOffset, yOffset));
@@ -360,8 +398,18 @@ export const v2 = Object.assign((x: number, y: number): Vec2 => ({ x, y }),{
      * @param angle `Radians Angle`
      * @returns A new `Vec2` With angle pos
      */
-    from_RadAngle(angle:RadAngle):Vec2 {
-        return this.new(Math.cos(angle),Math.sin(angle) )
+    from_PolarMovement(move:PolarMovement):Vec2 {
+        const ret=this.new(Math.cos(move.dir)*move.scale,Math.sin(move.dir)*move.scale)
+        v2m.max_decimal(ret,3)
+        return ret
+    },
+    /**
+     * 
+     * @param angle `Radians Angle`
+     * @returns A new `Vec2` With angle pos
+     */
+    from_RadAngle(angle:RadAngle,scale:number=1):Vec2 {
+        return this.new(Math.cos(angle)*scale,Math.sin(angle)*scale)
     },
     /**
      * 
@@ -377,9 +425,30 @@ export const v2 = Object.assign((x: number, y: number): Vec2 => ({ x, y }),{
      * @param angle `Radians Angle`
      * @returns A new `Vec2` With angle pos
      */
+    add_rotate_RadAngle(a:Vec2,b:Vec2,angle:RadAngle):Vec2 {
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        return this.new(a.x+(a.x*cos-b.y*sin),b.y+(b.x*sin+b.y*cos))
+    },
+    /**
+     * 
+     * @param angle `Deg Angle`
+     * @returns A new `Vec2` With angle pos
+     */
+    add_rotate_DegAngle(a:Vec2,b:Vec2,angle:DegAngle):Vec2 {
+        angle=Angle.deg2rad(angle)
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        return this.new(a.x+(b.x*cos-b.y*sin),b.y+(b.x*sin+b.y*cos))
+    },
+    /**
+     * 
+     * @param angle `Radians Angle`
+     * @returns A new `Vec2` With angle pos
+     */
     rotate_RadAngle(vec:Vec2,angle:RadAngle):Vec2 {
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
         return this.new(vec.x * cos - vec.y * sin, vec.x * sin + vec.y * cos)
     },
     /**
@@ -388,10 +457,16 @@ export const v2 = Object.assign((x: number, y: number): Vec2 => ({ x, y }),{
      * @returns A new `Vec2` With angle pos
      */
     rotate_DegAngle(vec:Vec2,angle:DegAngle):Vec2 {
-        const a=Angle.deg2rad(angle)
-        const cos = Math.cos(a);
-        const sin = Math.sin(a);
+        angle=Angle.deg2rad(angle)
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
         return this.new(vec.x * cos - vec.y * sin, vec.x * sin + vec.y * cos)
+    },
+    perp(vec: Vec2): Vec2 {
+        return { x: -vec.y, y: vec.x }
+    },
+    perp_cw(vec: Vec2): Vec2 {
+        return { x: vec.y, y: -vec.x }
     },
     /**
      * @param x `Vec_A`
@@ -424,7 +499,7 @@ export const v2 = Object.assign((x: number, y: number): Vec2 => ({ x, y }),{
         return x.x * y.x + x.y * y.y;
     },
     /**
-     * @param Vec2 The `Vec2` used in lenght
+     * @param Vec2 The `Vec2` used in length
      * @returns 
      */
     len(Vec2: Vec2): number {
@@ -504,18 +579,19 @@ export const v2 = Object.assign((x: number, y: number): Vec2 => ({ x, y }),{
     clone(Vec2:Vec2):Vec2{
         return this.new(Vec2.x,Vec2.y)
     },
+    is_vec2(val:any):boolean{
+        return typeof val==="object"&&val.x!==undefined&&val.y!==undefined
+    },
     /**
      * 
      * @param Vec2 The `Vec2` To hash
      * @returns Hashed Vec2
      */
-    /*hash(Vec2:Vec2):HashVec2{
-        let hash = BigInt(float32ToUint32(Vec2.x))
-        hash = (hash * prime1) & BigInt("4294967295")
-        hash ^= BigInt(float32ToUint32(Vec2.y))
-        hash = (hash * prime2) & BigInt("4294967295")
-        return hash
-    },*/
+    hash(v: Vec2): number {
+        const x = v.x | 0
+        const y = v.y | 0
+        return (x << 16) ^ y
+    },
     toString(Vec2:Vec2):string{
         return `{${Vec2.x},${Vec2.y}}`
     },

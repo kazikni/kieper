@@ -17,11 +17,12 @@ async function main(){
             game.join()
         }
     })
-    name_input.value=game.save.get_variable("cv_game_name")
+    name_input.value=game.save.get_variable("sv_game_name")
     name_input.addEventListener("change",(e)=>{
-        game.save.set_variable("cv_game_name",name_input.value)
+        game.save.set_variable("sv_game_name",name_input.value)
     })
 
+    game.mainloop(true)
     game.connect(`${server}/api/ws`)
 }
 main()

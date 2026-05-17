@@ -1,7 +1,7 @@
 import { LivingEntity } from "../abstract_objects/living_entity.ts";
 import { GameObject } from "./gameObject.ts";
 import { UpdatePacket } from "common/scripts/net/update_packet.ts"
-import { ClientGame, AxisActionEvent, WebglRenderer, Client, ConnectPacket, Color, ColorM, Key, v2m, Vec2, v2, ActionEvent, Numeric, HideElement, ShowElement, BasicSocket, DisconnectPacket, MouseEvents, isMobile} from "common/engine/client.ts"
+import { ClientGame, WebglRenderer, Client, ConnectPacket, Color, ColorM, v2m, Vec2, v2, Numeric, HideElement, ShowElement, BasicSocket, DisconnectPacket, isMobile, InputEventType, TranslationManager, InputActionEvent, InputAxisEvent} from "common/engine/client.ts"
 import { JoinPacket } from "common/scripts/net/join_packet.ts";
 import { GameColors } from "common/scripts/config/constants.ts";
 import { Player } from "../abstract_objects/player.ts";
@@ -131,13 +131,15 @@ export class Game extends ClientGame<GameObject>{
 
     fps:number=0
     fps_view=document.querySelector("#fps-view") as HTMLSpanElement
-    constructor(
-        canvas:HTMLCanvasElement,
-        objects:Array<new ()=>GameObject>=[]
-    ){
+    constructor(canvas:HTMLCanvasElement,objects:Array<new ()=>GameObject>=[]){
         super(
             new WebglRenderer(canvas),
-            [...objects,LivingEntity,Player,Shape,Bullet]
+            new TranslationManager({
+                code:"en",
+                name:"en",
+                values:{},
+            }),
+            [...objects,LivingEntity,Player,Shape,Bullet],
         )
         this.global_line_width=0.3
 
@@ -148,7 +150,10 @@ export class Game extends ClientGame<GameObject>{
         this.save.default_actions=ConfigDefaultActions
         this.save.default_values=ConfigDefaultValues
         this.save.casters=ConfigCasters
-        this.save.init("kieperio")
+        this.save.init({
+            type:"localstorage",
+            key:"kieperio_config"
+        })
 
         this.ui_manager.add(new AttributesManager())
         this.ui_manager.add(new EvolutionsManager())
@@ -173,30 +178,13 @@ export class Game extends ClientGame<GameObject>{
     }
 
     listeners_init(){
-        this.input_manager.add_axis("movement",
-            {
-                keys:[Key.W],
-                buttons:[]
-            },
-            {
-                keys:[Key.S],
-                buttons:[]
-            },
-            {
-                keys:[Key.A],
-                buttons:[]
-            },
-            {
-                keys:[Key.D],
-                buttons:[]
-            }
-        )
-        this.input_manager.on("axis",(a:AxisActionEvent)=>{
+        this.input_manager.add_axis("movement","move_up","move_down","move_left","move_right","left")
+        this.input_manager.listener.on(InputEventType.Axis,(a:InputAxisEvent)=>{
             if(a.action==="movement"){
                 this.input.movement=a.value
             }
         })
-        this.input_manager.on("actiondown",(e:ActionEvent)=>{
+        this.input_manager.listener.on(InputEventType.ActionDown,(e:InputActionEvent)=>{
             switch(e.action){
                 case "fire":
                     this.input.firing=true
@@ -204,19 +192,19 @@ export class Game extends ClientGame<GameObject>{
             }
             this.ui_manager.signal("action",e.action)
         })
-        this.input_manager.on("actionup",(e:ActionEvent)=>{
+        this.input_manager.listener.on(InputEventType.ActionUp,(e:InputAxisEvent)=>{
             switch(e.action){
                 case "fire":
                     this.input.firing=false
                     break
             }
         })
-        this.input_manager.mouse.listener.on(MouseEvents.MouseMove,()=>{
+        this.input_manager.listener.on(InputEventType.MouseMove,()=>{
             if(isMobile){
                 //console.log()
             }else{
                 const cam_c=v2.new(this.cam2d.width/2,this.cam2d.height/2)
-                const mouse_p=v2.dscale(this.input_manager.mouse.position,this.cam2d.zoom)
+                const mouse_p=v2.dscale(this.input_manager.position,this.cam2d.zoom)
                 const angle=v2.lookTo(cam_c,mouse_p)
                 const dist=v2.distance(cam_c,mouse_p)
                 this.set_lookTo_angle(angle,dist)
@@ -258,7 +246,7 @@ export class Game extends ClientGame<GameObject>{
             cam_pos=this.active_entity.position
 
         }else if(this.has_active_entity&&this.active_entity_id){
-            this.active_entity=this.scene_2d.objects.get_object(this.active_entity_id,this.active_entity_layer!) as Player
+            this.active_entity=this.scene_2d.objects.get_object(this.active_entity_id) as Player
             if(this.active_entity)cam_pos=this.active_entity.position
         }else{
             this.map_center_angle=this.map_center_angle+0.01
@@ -294,22 +282,23 @@ export class Game extends ClientGame<GameObject>{
     join(){
         if(!this.client)return
         const packet=new JoinPacket()
-        packet.player_name=this.save.get_variable("cv_game_name")
+        packet.player_name=this.save.get_variable("sv_game_name")
         this.client.emit(packet)
-        this.save.save("kieperio")
+        this.save.save({
+            type:"localstorage",
+            key:"kieperio_config"
+        })
     }
     connect(url:string){
         const client=new Client(new WebSocket(url) as unknown as BasicSocket,PacketManager)
         this.set_client(client)
     }
-    last_list:GameObject[]=[]
     set_client(client:Client){
         if(!client.opened)this.client=undefined
         this.client=client
         this.show_menu()
         client.on("update",(p:UpdatePacket)=>{
-            const list=this.scene_2d.objects.proccess_list(p.objects!,true,this.last_list)
-            this.last_list=list
+            this.scene_2d.objects.proccess(p.objects!,true)
             this.ui_manager.signal("update_private",p.priv)
         })
         client.on("connect",(_p:ConnectPacket)=>{
@@ -318,8 +307,6 @@ export class Game extends ClientGame<GameObject>{
             this.map_size=p.map_size
             this.map_center=v2.dscale(p.map_size,2)
             this.map_center_pos=v2.clone(this.map_center)
-
-            this.mainloop(true)
         })
         client.on("set_spectation",(p:SetSpectationPacket)=>{
             this.has_active_entity=p.has_object
@@ -335,8 +322,7 @@ export class Game extends ClientGame<GameObject>{
         })
         client.on("disconnect",(_p:DisconnectPacket)=>{
             this.show_menu()
-            this.scene_2d.reset()
-            this.stop()
+            this.clear()
             this.client=undefined
         })
     }

@@ -1,10 +1,8 @@
 import { Vec2 } from "../../core/math/vec2.ts";
-import { GL2D_CTXSimpleBatchArgs, GL2D_CTXSimpleBatchAttr, GL2D_GridMatArgs, GL2D_GridMatAttr, GL2D_LightMatArgs, GL2D_LightMatAttr, GL2D_SimpleBatchArgs, GL2D_SimpleBatchAttr, GL2D_SimpleMatArgs, GL2D_SimpleMatAttr, GL2D_TexBatchArgs, GL2D_TexBatchAttr, GL2D_TexMatArgs, GL2D_TexMatAttr, GL3D_SimpleMatArgs, GL3D_SimpleMatAttr, GLF_CTXSimpleBatch, GLF_Grid, GLF_Light, GLF_Simple, GLF_Simple3, GLF_SimpleBatch, GLF_Texture, GLF_TextureBatch } from "./materials.ts";
-
-import { Frame } from "../resources/resources.ts";
+import { GL2D_CTXSimpleBatchArgs, GL2D_CTXSimpleBatchAttr, GL2D_GridMatArgs, GL2D_GridMatAttr, GL2D_SimpleBatchArgs, GL2D_SimpleBatchAttr, GL2D_SimpleMatArgs, GL2D_SimpleMatAttr, GL2D_TexBatchArgs, GL2D_TexBatchAttr, GL2D_TexMatArgs, GL2D_TexMatAttr, GL3D_SimpleMatArgs, GL3D_SimpleMatAttr, GLF_CTXSimpleBatch, GLF_Grid, GLF_Simple, GLF_Simple3, GLF_SimpleBatch, GLF_Texture, GLF_TextureBatch } from "./materials.ts";
 import { Color, ColorM } from "../../core/math/color.ts";
 import { SingleMatBatching2D, SingleMatBatching2DGL } from "./batcher.ts";
-import { Matrix } from "../../core/definition/matrix.ts";
+import { Matrix } from "../../core/math/matrix.ts";
 
 export type Material=GLMaterial
 
@@ -14,42 +12,50 @@ export abstract class Renderer {
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas
     }
-    abstract draw_image2D(image: Frame,position: Vec2,model:Float32Array,matrix:Matrix,tint?:Color): void
     abstract draw(material:Material,matrix:Matrix,attr:any):void
     abstract draw_single_mat_batcher2d(matrix:Matrix,batcher:SingleMatBatching2D):void
     abstract clear(): void
 }
+export class GLDynamicBuffer {
+    buffer: WebGLBuffer
+    size = 0
+    private disposed = false
+    constructor(private gl: WebGLRenderingContext) {
+        this.buffer = gl.createBuffer()!
+    }
+    upload(target: number, data: Float32Array, usage: number = 35048) {
+        if (this.disposed) return
 
-const texVertexShaderSource = `
-attribute vec2 a_Position;
-attribute vec2 a_TexCoord;
-    
-uniform mat4 u_ProjectionMatrix;
-uniform vec2 u_Translation;
+        const gl = this.gl
+        gl.bindBuffer(target, this.buffer)
 
-varying highp vec2 vTextureCoord;
+        if (data.length > this.size) {
+            this.size = data.length
+            gl.bufferData(target, data, usage)
+        } else {
+            gl.bufferSubData(target, 0, data)
+        }
+    }
+    exists(): boolean {
+        return !!this.buffer && this.gl.isBuffer(this.buffer)
+    }
+    free() {
+        if (this.disposed) return
+        if (this.buffer && this.gl.isBuffer(this.buffer)) {
+            this.gl.deleteBuffer(this.buffer)
+        }
 
-void main(void) {
-    gl_Position = u_ProjectionMatrix*vec4(a_Position+u_Translation.xy,0.0,1.0);
-    vTextureCoord = a_TexCoord;
-}`;
-
-const texFragmentShaderSource = `
-precision mediump float;
-
-varying highp vec2 vTextureCoord;
-uniform sampler2D u_Texture;
-uniform vec4 u_Tint;
-
-void main(void) {
-    vec2 flippedCoord = vec2(vTextureCoord.x, 1.0 - vTextureCoord.y);
-    gl_FragColor = texture2D(u_Texture, flippedCoord)*u_Tint;
-}`;
+        this.buffer = null as any
+        this.size = 0
+        this.disposed = true
+    }
+}
 // deno-lint-ignore no-explicit-any
 export type GLMaterial<Args=any,Attr=any>={
     group:string
     factory:GLMaterialFactory<Args,Attr>
     draw:(mat:GLMaterial<Args,Attr>,matrix:Matrix,attr:Attr)=>void
+    free:()=>void
 }&Args
 export interface GLMaterialFactory<Args,Attr>{
     create:(arg:Args)=>GLMaterial<Args,Attr>
@@ -59,7 +65,6 @@ export type GLMaterialFactoryCall<Args,Attr>={vertex:string,frag:string,create:(
 
 export class WebglRenderer extends Renderer {
     readonly gl: WebGLRenderingContext
-    readonly tex_program:WebGLProgram
     readonly factorys2D:{
         simple_batch:GLMaterialFactory<GL2D_SimpleBatchArgs,GL2D_SimpleBatchAttr>,
         ctx_simple_batch:GLMaterialFactory<GL2D_CTXSimpleBatchArgs,GL2D_CTXSimpleBatchAttr>,
@@ -67,13 +72,15 @@ export class WebglRenderer extends Renderer {
         grid:GLMaterialFactory<GL2D_GridMatArgs,GL2D_GridMatAttr>,
         texture:GLMaterialFactory<GL2D_TexMatArgs,GL2D_TexMatAttr>,
         texture_batch:GLMaterialFactory<GL2D_TexBatchArgs,GL2D_TexBatchAttr>,
-        light:GLMaterialFactory<GL2D_LightMatArgs,GL2D_LightMatAttr>
+        //light:GLMaterialFactory<GL2D_LightMatArgs,GL2D_LightMatAttr>
     }
     readonly factorys3D:{
         simple:GLMaterialFactory<GL3D_SimpleMatArgs,GL3D_SimpleMatAttr>,
     }
 
     readonly isWebGL2: boolean;
+    current_program?:WebGLProgram
+
     proccess_factory<A,B>(fac_def:GLMaterialFactoryCall<A,B>):GLMaterialFactory<A,B>{
         const prog=this.createProgram(fac_def.vertex,fac_def.frag)
         const fac={
@@ -86,13 +93,15 @@ export class WebglRenderer extends Renderer {
         //@ts-ignore
         return fac
     }
-    factorys2D_consts:Record<string,Record<string,WebGLUniformLocation|number>>={}
-    constructor(canvas: HTMLCanvasElement, background: Color = ColorM.default.white, version: 1 | 2 = 2) {
+
+    quadVBO:WebGLBuffer
+    quadTBO:WebGLBuffer
+    constructor(canvas: HTMLCanvasElement, background: Color = ColorM.default.white, version: 1 | 2 = 2,antialias: boolean = true) {
         super(canvas);
         const gl =
             version === 2
-                ? canvas.getContext("webgl2", { antialias: true })
-                : canvas.getContext("webgl", { antialias: true })
+                ? canvas.getContext("webgl2",{antialias})
+                : canvas.getContext("webgl",{antialias})
         
         if (!gl) throw new Error(`Failed to initialize WebGL${version}`)
         // deno-lint-ignore no-explicit-any
@@ -100,12 +109,6 @@ export class WebglRenderer extends Renderer {
         this.isWebGL2 = version === 2
 
         this.background = background;
-        //Tex Program
-        const tex_program = gl!.createProgram();
-        gl!.attachShader(tex_program!, this.createShader(texVertexShaderSource, gl!.VERTEX_SHADER))
-        gl!.attachShader(tex_program!, this.createShader(texFragmentShaderSource, gl!.FRAGMENT_SHADER))
-        this.tex_program = tex_program!
-        gl!.linkProgram(this.tex_program)
 
         this.factorys2D={
             simple_batch:this.proccess_factory(GLF_SimpleBatch),
@@ -114,22 +117,11 @@ export class WebglRenderer extends Renderer {
             grid:this.proccess_factory(GLF_Grid),
             texture_batch:this.proccess_factory(GLF_TextureBatch),
             texture:this.proccess_factory(GLF_Texture),
-            light:this.proccess_factory(GLF_Light),
+            //light:this.proccess_factory(GLF_Light),
         }
 
         this.factorys3D={
             simple:this.proccess_factory(GLF_Simple3)
-        }
-        
-        this.factorys2D_consts["texture_ADV"]={
-            "position":this.gl.getAttribLocation(this.tex_program, "a_Position"),
-            "coord":this.gl.getAttribLocation(this.tex_program, "a_TexCoord"),
-            "color":this.gl.getUniformLocation(this.tex_program, "u_Color")!,
-            "translation":this.gl.getUniformLocation(this.tex_program, "u_Translation")!,
-            "scale":this.gl.getUniformLocation(this.tex_program, "u_Scale")!,
-            "proj":this.gl.getUniformLocation(this.tex_program, "u_ProjectionMatrix")!,
-            "texture":this.gl.getUniformLocation(this.tex_program, "u_Texture")!,
-            "tint":this.gl.getUniformLocation(this.tex_program, "u_Tint")!,
         }
 
         document.body.addEventListener("pointerdown", e => {
@@ -153,6 +145,9 @@ export class WebglRenderer extends Renderer {
         })
 
         canvas.tabIndex = 0
+
+        this.quadVBO = gl.createBuffer()
+        this.quadTBO = gl.createBuffer()
     }
     createShader(src: string, type: number): WebGLShader {
         const shader = this.gl.createShader(type);
@@ -182,40 +177,11 @@ export class WebglRenderer extends Renderer {
     override draw_single_mat_batcher2d(matrix:Matrix,batcher:SingleMatBatching2D):void{
         batcher.render(matrix)
     }
-    draw_image2D(image: Frame, position: Vec2, model: Float32Array, matrix: Matrix, tint: Color = ColorM.default.white) {
-        const gl = this.gl
-        const program = this.tex_program
-    
-        // Position buffer
-        const vbo = gl.createBuffer()
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
-        gl.bufferData(gl.ARRAY_BUFFER, model, gl.STATIC_DRAW)
-    
-        // UV buffer
-        const tbo = gl.createBuffer()
-        gl.bindBuffer(gl.ARRAY_BUFFER, tbo)
-        gl.bufferData(gl.ARRAY_BUFFER, image.texture_coordinates, gl.STATIC_DRAW)
-    
-        gl.useProgram(program)
-    
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
-        gl.enableVertexAttribArray(this.factorys2D_consts["texture_ADV"]["position"] as number)
-        gl.vertexAttribPointer(this.factorys2D_consts["texture_ADV"]["position"] as number, 2, gl.FLOAT, false, 0, 0)
-    
-        gl.bindBuffer(gl.ARRAY_BUFFER, tbo);
-        gl.enableVertexAttribArray(this.factorys2D_consts["texture_ADV"]["coord"] as number)
-        gl.vertexAttribPointer(this.factorys2D_consts["texture_ADV"]["coord"]as number, 2, gl.FLOAT, false, 0, 0);
-    
-        gl.activeTexture(gl.TEXTURE0)
-        gl.bindTexture(gl.TEXTURE_2D, image.texture)
-        gl.uniform1i(this.factorys2D_consts.texture_ADV.texture, 0);
-    
-        gl.uniformMatrix4fv(this.factorys2D_consts.texture_ADV.proj, false, matrix);
-        gl.uniform2f(this.factorys2D_consts.texture_ADV.translation, position.x, position.y);
-        gl.uniform4f(this.factorys2D_consts.texture_ADV.tint, tint.r, tint.g, tint.b, tint.a);
-    
-        // DRAW
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    set_program(program:WebGLProgram){
+        if(!this.current_program||program!==this.current_program){
+            this.current_program=program
+            this.gl.useProgram(program)
+        }
     }
 
     clear() {
@@ -259,7 +225,6 @@ export function applyBorder(elem: HTMLElement) {
 
 export function applyShadow(elem: HTMLElement) {
     elem.style.boxShadow = "0px 4px 17px 0px rgba(0,0,0,0.19)";
-    elem.style.webkitBoxShadow = "0px 4px 17px 0px rgba(0,0,0,0.19)";
 }
 
 export function fullCanvas(elem: HTMLCanvasElement) {

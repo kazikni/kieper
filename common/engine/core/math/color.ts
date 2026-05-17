@@ -26,17 +26,39 @@ export const ColorM={
         return { r: r / 255, g: g / 255, b: b / 255, a: a / 255 };
     },
     hex(hex: string): Color {
-        hex = hex.replace("#", "");
-        if ([3, 4, 6, 8].indexOf(hex.length) === -1) throw new Error("Invalid Hex")
+        hex = hex.replace("#", "").replace("0x","")
 
-        const toFloat = (v: string) => parseInt(v.repeat(2 / v.length), 16) / 255
+        if (![3,4,6,8].includes(hex.length))
+            throw new Error("Invalid hex color")
 
-        const r = toFloat(hex[0])
-        const g = toFloat(hex[1])
-        const b = toFloat(hex[2])
-        const a = hex.length > 3 ? toFloat(hex[3]) : 1
+        let r:number = 0
+        let g:number = 0
+        let b:number = 0
+        let a:number = 255
 
-        return { r, g, b, a };
+        if (hex.length === 3 || hex.length === 4) {
+            r = parseInt(hex[0] + hex[0],16)
+            g = parseInt(hex[1] + hex[1],16)
+            b = parseInt(hex[2] + hex[2],16)
+
+            if (hex.length === 4)
+                a = parseInt(hex[3] + hex[3],16)
+
+        } else if (hex.length === 6 || hex.length === 8) {
+            r = parseInt(hex.slice(0,2),16)
+            g = parseInt(hex.slice(2,4),16)
+            b = parseInt(hex.slice(4,6),16)
+
+            if (hex.length === 8)
+                a = parseInt(hex.slice(6,8),16)
+        }
+
+        return {
+            r: r / 255,
+            g: g / 255,
+            b: b / 255,
+            a: a / 255
+        }
     },
     number(color:number):Color{
         color=Math.min(0xffffff,color)
@@ -70,15 +92,18 @@ export const ColorM={
             a
         }
     },
+    rgba2hex(color: Color): string {
+        const r = Numeric.clamp(Math.round(color.r * 255), 0, 255)
+        const g = Numeric.clamp(Math.round(color.g * 255), 0, 255)
+        const b = Numeric.clamp(Math.round(color.b * 255), 0, 255)
+        const a = Numeric.clamp(Math.round(color.a * 255), 0, 255)
 
-    rgba2hex(color:Color):string{
-        const red = (color.r*255).toString(16).padStart(2, '0')
-        const green = (color.g*255).toString(16).padStart(2, '0')
-        const blue = (color.b*255).toString(16).padStart(2, '0')
+        const red   = r.toString(16).padStart(2, "0")
+        const green = g.toString(16).padStart(2, "0")
+        const blue  = b.toString(16).padStart(2, "0")
+        const alpha = a.toString(16).padStart(2, "0")
 
-        const alpha = (color.a*255).toString(16).padStart(2, '0')
-
-        if (alpha === 'ff') {
+        if (a === 255) {
             return `#${red}${green}${blue}`
         }
 
@@ -109,10 +134,10 @@ export const ColorM={
         return { h, s, v, a: color.a }
     },
     number2hex(color:number):string{
-        return `0x${color.toString(16).padStart(6, '0')}`
+        return `#${color.toString(16).padStart(6, '0')}`
     },
     hex2number(color: string): number {
-        return parseInt(color.replace(/^0x/, ''), 16)
+        return parseInt(color.replace(/^#/, ''), 16)
     },
     mult(dst:Color,x:Color,y:Color){
         dst.r=x.r*y.r

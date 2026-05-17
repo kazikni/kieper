@@ -53,9 +53,9 @@ export class LivingEntity extends GameObject{
     }
     override update(dt: number): void {
         if(this.physical_data.interpolation){
-            if(this.dest_position)v2m.lerp(this.position,this.dest_position,Numeric.dt_expo_inter(8.5,dt))
+            if(this.dest_position)v2m.lerp(this.position,this.dest_position,Numeric.dt_expo_inter(9,dt))
             if(this.dest_rotation&&(this.game.active_entity!==this||this.game.spectating)){
-                this.rotation=Numeric.lerp_rad(this.rotation,this.dest_rotation,Numeric.dt_expo_inter(8.5,dt))
+                this.rotation=Numeric.lerp_rad(this.rotation,this.dest_rotation,Numeric.dt_expo_inter(9,dt))
             }
         }
         if(this.health_data.dead){
@@ -95,7 +95,9 @@ export class LivingEntity extends GameObject{
             camera.ctx.fill_rect(x,y,w*this.health_data.health,0.5)
         }
         if(this.name_data.frame){
-            camera.ctx.draw_frame2d(this.name_data.frame,ImageModel2D(v2.one,0,v2.new(.5,.5),this.name_data.frame.frame_size!,this.game.cam2d.meter_size,v2(this.position.x,this.position.y-(this.physical_data.scale*this.physical_data.radius)-2)))
+            const model=new Float32Array(16)
+            ImageModel2D(v2.one,0,v2.new(.5,.5),this.name_data.frame.frame_size!,this.game.cam2d.meter_size,v2(this.position.x,this.position.y-(this.physical_data.scale*this.physical_data.radius)-2),{min:v2(0,0),max:v2(0,0)},model)
+            camera.ctx.draw_frame2d(this.name_data.frame,model)
         }
     }
     override create(args: Record<string, any>): void {
@@ -207,7 +209,7 @@ export class LivingEntity extends GameObject{
             this.health_data.visible=visible
             if(dead){
                 this.health_data.dead=dead
-                this.netSync.deletion=false
+                this.net_sync.enabled.deletion=false
             }
 
             if(visible){

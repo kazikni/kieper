@@ -1,4 +1,4 @@
-import { Matrix } from "../../core/definition/matrix.ts";
+import { Matrix } from "../../core/math/matrix.ts";
 import { Model2D } from "../../core/definition/models.ts";
 import { Color } from "../../core/math/color.ts";
 import { Vec2 } from "../../core/math/vec2.ts";
@@ -80,6 +80,7 @@ export class Batcher {
     renderer: Renderer
     commands: BatcherDraw[] = []
     current?: BatcherDraw
+    gpuArrays: Record<string, Float32Array> = {}
 
     constructor(renderer: Renderer) {
         this.renderer = renderer
@@ -142,7 +143,7 @@ export class Batcher {
         const cmd = this.ensure(frame.batch_mat,matrix)
 
         this.push_array(cmd, "vertices", model, vertexCount)
-        this.push_array(cmd, "tex_coord", frame.texture_coordinates, vertexCount)
+        this.push_array(cmd, "tex_coord", frame.texcoords, vertexCount)
         this.push_array(cmd, "tint", [tint.r,tint.g,tint.b,tint.a], vertexCount)
         for (const k in attr) {
             this.push_array(cmd, k, attr[k], vertexCount)
@@ -151,6 +152,17 @@ export class Batcher {
 
     render(matrix: Matrix) {
         for (const cmd of this.commands) {
+            for (const k in cmd.arrays) {
+                if(!this.gpuArrays[k]||this.gpuArrays[k].length!==cmd.arrays[k].length){
+                    this.gpuArrays[k] = new Float32Array(cmd.arrays[k].length)
+                }
+                this.gpuArrays[k].set(cmd.arrays[k])
+            }
+
+            cmd.material.draw(cmd.material, matrix, this.gpuArrays)
+        }
+        this.clear()
+        /*for (const cmd of this.commands) {
             const gpuArrays: Record<string, Float32Array> = {}
             for (const k in cmd.arrays) {
                 gpuArrays[k] = new Float32Array(cmd.arrays[k])
@@ -158,7 +170,7 @@ export class Batcher {
 
             cmd.material.draw(cmd.material, matrix, gpuArrays)
         }
-        this.clear()
+        this.clear()*/
     }
 
     clear() {

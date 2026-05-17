@@ -24,14 +24,14 @@ export function update_net(client:Client,game:Game,entity?:LivingEntity,self?:Li
                 up.priv.evolutions=entity.possible_evolutions
 
                 const objs:GameObject[]=get_objects(game,entity.position,entity.layer,v2.new(100,60))
-                const rr=game.scene_2d.objects.encode_list(objs,view_objects,undefined)
+                const rr=game.scene_2d.objects.encode_list(objs,view_objects)
 
                 up.objects=rr.strm
                 entity.client.emit(up)
                 return [up,rr.last]
             }else if([GameObjectType.Shape,GameObjectType.Tank,GameObjectType.Shape].includes(entity.number_type)){
                 const objs=get_objects(game,entity.position,entity.layer,v2.new(100,60))
-                const o=game.scene_2d.objects.encode_list(objs,view_objects,undefined)
+                const o=game.scene_2d.objects.encode_list(objs,view_objects)
 
                 up.objects=o.strm
                 return [up,o.last]
@@ -49,7 +49,6 @@ export function get_objects(game:Game,pos:Vec2,layer:number,size:Vec2){
     const min=v2.sub(pos,size)
     const max=v2.add(pos,size)
     const camera_hb=new RectHitbox2D(min,max)
-
     const objs=game.scene_2d.cells.get_objects(camera_hb,layer)
     return objs
 }

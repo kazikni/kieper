@@ -55,7 +55,7 @@ export class EvolutionsManager extends UIModule<Game>{
     }
     override on_update(dt: number): void {
     }
-    override on_dirty(): void {
+    dirty(): void {
         const evo = this.root.content["evolutions"];
         evo.innerHTML = "";
         if (!this.visible){
@@ -137,5 +137,7 @@ export class EvolutionsManager extends UIModule<Game>{
                 this.dirty()
             }
         }
+    }
+    override on_clear(): void {
     }
 }

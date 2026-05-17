@@ -1,12 +1,14 @@
 import { KDate } from "../definition/definitions.ts";
+import { PolarMovement } from "../math/geometry.ts";
 import { CircleHitbox2D, Hitbox2D, HitboxGroup2D, HitboxType2D, NullHitbox2D, PolygonHitbox2D, RectHitbox2D } from "../math/hitbox.ts";
 import { ID } from "../math/utils.ts";
-import { Vec2 } from "../math/vec2.ts";
+import { Vec2,v2 } from "../math/vec2.ts";
+import { v3 } from "../math/vec3.ts";
 //Thanks Suroi.io
 
 export class NetStream {
-    protected static readonly decoder = new TextDecoder();
-    protected static readonly encoder = new TextEncoder();
+    static readonly decoder = new TextDecoder();
+    static readonly encoder = new TextEncoder();
 
     readonly _view: DataView;
     readonly _u8Array: Uint8Array;
@@ -303,9 +305,15 @@ export class NetStream {
         if (i === 0) return "";
         return NetStream.decoder.decode(buf.subarray(0, i));
     }
-    readString(){
-        const s=this.readUint24()
-        return this.readStringSized(s)
+    readString(bytes: 1|2|3|4 = 2){
+        let len = 0;
+        switch (bytes) {
+            case 1: len = this.readUint8(); break
+            case 2: len = this.readUint16(); break
+            case 3: len = this.readUint24(); break
+            case 4: len = this.readUint32(); break
+        }
+        return this.readStringSized(len)
     }
 
     /**
@@ -334,8 +342,14 @@ export class NetStream {
 
         return this;
     }
-    writeString(string:string):this{
-        this.writeUint24(string.length)
+    writeString(string:string,bytes: 1|2|3|4 = 2):this{
+        const length=string.length
+        switch (bytes) {
+            case 1: this.writeUint8(length); break
+            case 2: this.writeUint16(length); break
+            case 3: this.writeUint24(length); break
+            case 4: this.writeUint32(length); break
+        }
         this.writeStringSized(string.length,string)
         if(this.index>this.length)this.length=this.index
         return this
@@ -489,7 +503,26 @@ export class NetStream {
             + (bF ? 32768 : 0)
         );
     }
+    writeBooleans(l: boolean[]): this {
+        const byteCount = Math.ceil(l.length / 8);
 
+        for (let i = 0; i < byteCount; i++) {
+            let packed = 0;
+
+            for (let bit = 0; bit < 8; bit++) {
+                const index = i * 8 + bit;
+                if (index >= l.length) break;
+
+                if (l[index]) {
+                    packed |= (1 << bit);
+                }
+            }
+
+            this.writeUint8(packed);
+        }
+
+        return this;
+    }
     /**
      * Reads a group of 16 booleans over 2 bytes. "Don't care" terms will have been encoded as `false`.
      * Intended to be used with destructuring:
@@ -526,7 +559,22 @@ export class NetStream {
             (packedGroup & 32768) !== 0
         ];
     }
+    readBooleans(count: number): boolean[] {
+        const result: boolean[] = new Array(count);
+        const byteCount = Math.ceil(count / 8);
 
+        let idx = 0;
+
+        for (let i = 0; i < byteCount; i++) {
+            const packed = this.readUint8();
+
+            for (let bit = 0; bit < 8 && idx < count; bit++) {
+                result[idx++] = (packed & (1 << bit)) !== 0;
+            }
+        }
+
+        return result;
+    }
     /**
      * Writes an array's elements to the stream, with a maximum length depending on the chosen byte count
      * @param source The source array. Arrays exceeding the maximum length will be truncated silently (see below for maximum lengths)
@@ -652,7 +700,216 @@ export class NetStream {
         }
         return this
     }
+    writeStringDict<T>(source: Record<string, T>,elementWriter: (item: T, stream: this) => void,bytes: 1|2|3|4=1,string_len_bytes:1|2|3|4=1): this {
+        const keys = Object.keys(source)
+        const length = Math.min(keys.length, 2 ** (8 * bytes) - 1)
 
+        switch (bytes) {
+            case 1: this.writeUint8(length); break
+            case 2: this.writeUint16(length); break
+            case 3: this.writeUint24(length); break
+            case 4: this.writeUint32(length); break
+        }
+
+        for (let i = 0; i < length; i++) {
+            const key = keys[i]
+            this.writeString(key,string_len_bytes)
+            elementWriter(source[key], this)
+        }
+
+        return this
+    }
+    readStringDict<T>(elementReader: (stream: this) => T,bytes: 1|2|3|4,string_len_bytes:1|2|3|4=1): Record<string, T> {
+        let len = 0
+
+        switch (bytes) {
+            case 1: len = this.readUint8(); break
+            case 2: len = this.readUint16(); break
+            case 3: len = this.readUint24(); break
+            case 4: len = this.readUint32(); break
+        }
+
+        const obj: Record<string, T> = {}
+
+        for (let i = 0; i < len; i++) {
+            const key = this.readString(string_len_bytes)
+            obj[key] = elementReader(this)
+        }
+
+        return obj
+    }
+    writeObject(obj: any,bytes1?:1|2|3|4,bytes2?:1|2|3|4): this {
+        if (obj === null) {
+            this.writeUint8(0)
+            return this
+        }
+
+        switch (typeof obj) {
+            case "boolean":
+                this.writeUint8(1)
+                this.writeUint8(obj ? 1 : 0)
+                return this
+            case "number":
+                this.writeUint8(2)
+                this.writeFloat64(obj)
+                return this
+            case "string":
+                this.writeUint8(3)
+                this.writeString(obj,bytes2)
+                return this
+            case "object":
+                if (Array.isArray(obj)) {
+                    this.writeUint8(4)
+                    this.writeArray(obj, (v, s) => s.writeObject(v,bytes1,bytes2), 3)
+                    return this
+                }
+
+                this.writeUint8(5)
+                this.writeStringDict(obj, (v,s) => s.writeObject(v,bytes1,bytes2), 3)
+                return this
+        }
+
+        throw new Error("Unsupported type in writeObject")
+    }
+    readObject(bytes1?:1|2|3|4,bytes2?:1|2|3|4): any {
+        const type = this.readUint8()
+
+        switch (type) {
+            case 0: return null
+            case 1:
+                return this.readUint8() === 1
+            case 2:
+                return this.readFloat64()
+            case 3:
+                return this.readString(bytes2)
+            case 4:
+                return this.readArray(s => s.readObject(bytes1,bytes2), 3)
+            case 5:
+                return this.readStringDict(s => s.readObject(bytes1,bytes2), 3)
+        }
+
+        throw new Error("Invalid type in readObject")
+    }
+    writeObjectAdvanced(obj: any, settings:{arr_len?:1|2|3|4,str_len?:1|2|3|4,keys_len?:1|2|3|4} = {}): this {
+        const t = typeof obj
+
+        if (obj === null) {
+            this.writeUint8(0)
+            return this
+        }
+
+        switch (t) {
+            case "undefined":
+                this.writeUint8(1)
+                break
+            case "number":
+                if (Number.isInteger(obj)) {
+                    this.writeUint8(2)
+                    this.writeInt32(obj)
+                } else {
+                    this.writeUint8(3)
+                    this.writeFloat32(obj)
+                }
+                break
+            case "bigint":
+                this.writeUint8(4)
+                this.writeInt64(obj)
+                break
+            case "string":
+                this.writeUint8(5)
+                this.writeString(obj, settings.str_len ?? 2)
+                break
+            case "boolean":
+                this.writeUint8(6)
+                this.writeUint8(obj ? 1 : 0)
+                break
+            case "object":
+                if (v3.is_vec3(obj)) {
+                    this.writeUint8(7)
+                    this.writeFloat32(obj.x)
+                    this.writeFloat32(obj.y)
+                    this.writeFloat32(obj.z)
+                }else if (v2.is_vec2(obj)) {
+                    this.writeUint8(8)
+                    this.writeFloat32(obj.x)
+                    this.writeFloat32(obj.y)
+                }else if (Array.isArray(obj)) {
+                    this.writeUint8(254)
+                    this.writeArray(obj, (v) => this.writeObjectAdvanced(v, settings), settings.arr_len ?? 2)
+                }else{
+                    this.writeUint8(255)
+                    const keys = Object.keys(obj)
+                    const lenBytes = settings.keys_len??2
+                    switch (lenBytes) {
+                        case 1: this.writeUint8(keys.length); break
+                        case 2: this.writeUint16(keys.length); break
+                        case 3: this.writeUint24(keys.length); break
+                        case 4: this.writeUint32(keys.length); break
+                    }
+
+                    for (const k of keys) {
+                        this.writeString(k, settings.str_len ?? 1)
+                        this.writeObjectAdvanced(obj[k], settings)
+                    }
+                }
+                break
+        }
+        return this
+    }
+    readObjectAdvanced(settings:{arr_len?:1|2|3|4,str_len?:1|2|3|4,keys_len?:1|2|3|4} = {}): any {
+        const type = this.readUint8()
+        switch (type) {
+            case 0: // null
+                return null
+            case 1:// undefined
+                return undefined
+            case 2:// int32
+                return this.readInt32()
+            case 3:// float32
+                return this.readFloat32()
+            case 4:// bigint
+                return this.readInt64()
+            case 5:// string
+                return this.readString(settings.str_len ?? 2)
+            case 6:// boolean
+                return this.readUint8() === 1
+            case 7:// vec3
+                return v3(
+                    this.readFloat32(),
+                    this.readFloat32(),
+                    this.readFloat32()
+                )
+            case 8:// vec2
+                return v2(
+                    this.readFloat32(),
+                    this.readFloat32()
+                )
+            case 254:{// array
+                return this.readArray(
+                    (s) => s.readObjectAdvanced(settings),
+                    settings.arr_len ?? 2
+                )
+            }
+            case 255:{// object
+                let len = 0
+                const lenBytes = settings.keys_len ?? 2
+                switch (lenBytes) {
+                    case 1: len = this.readUint8(); break
+                    case 2: len = this.readUint16(); break
+                    case 3: len = this.readUint24(); break
+                    case 4: len = this.readUint32(); break
+                }
+                const obj: Record<string, any> = {}
+                for (let i = 0; i < len; i++) {
+                    const key = this.readString(settings.str_len ?? 1)
+                    obj[key] = this.readObjectAdvanced(settings)
+                }
+                return obj
+            }
+        }
+
+        throw new Error("Invalid type in readObjectAdvanced: " + type)
+    }
     /**
      * Copies a section of a stream into this one. By default, the entire source stream is read and copied
      * @param src The ByteStream to copy from
@@ -736,6 +993,17 @@ export class NetStream {
             y: this.readFloat(minY, maxY, bytes)
         };
     }
+    writePolarMov2(move:PolarMovement):this{
+        this.writeRad(move.dir);
+        this.writeFloat(move.scale,0,1,1);
+        return this;
+    }
+    readPolarMov2():PolarMovement{
+        return {
+            dir: this.readRad(),
+            scale: this.readFloat(0,1,1)
+        };
+    }
     writePos2(vector: Vec2):this{
         this.writeFloat32(vector.x);
         this.writeFloat32(vector.y);
@@ -745,17 +1013,6 @@ export class NetStream {
         return {
             x: this.readFloat32(),
             y: this.readFloat32()
-        };
-    }
-    writeWorldPos(vector: Vec2):this{
-        this.writeFloat(vector.x,0,10000,3)
-        this.writeFloat(vector.y,0,10000,3)
-        return this;
-    }
-    readWorldPos(): Vec2 {
-        return {
-            x: this.readFloat(0,10000,3),
-            y: this.readFloat(0,10000,3)
         };
     }
     writeID(id: ID):this{

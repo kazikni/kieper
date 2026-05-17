@@ -24,12 +24,12 @@ export class DefinitionsSimple<Type,Base=null>{
     }
     getFromString(id:string):Type{
         if(!this.value[id]){
-            console.log(`idString:${id} Dont Exist In Definition`)
+            throw new Error(`idString:${id} Dont Exist In Definition`)
         }
         return this.value[id]
     }
     getFromNumber(id:number):Type{
-        if(!this.valueNumber[id])throw `idNumber:${id} Dont Exist In Definition`
+        if(!this.valueNumber[id])throw new Error(`idNumber:${id} Dont Exist In Definition`)
         return this.valueNumber[id]
     }
     exist(id:string):boolean{
@@ -37,6 +37,11 @@ export class DefinitionsSimple<Type,Base=null>{
     }
     extends(extend:string,val:Partial<Type>,id:string){
         this.set(mergeDeep<Type>(this.getFromString(extend)!,val),id)
+    }
+    clear(){
+        this.value={}
+        this.valueNumber={}
+        this.did=0
     }
 }
 export class Definitions<Type extends Definition,Base> extends DefinitionsSimple<Type,Base>{
@@ -67,6 +72,15 @@ export class DefinitionsMerge<TP extends Definition>{
     constructor(){
 
     }
+    insert(...val:TP[]):void{
+        for(const vv of val){
+            const idn=Object.keys(this.keysNumber).length
+            this.valueNumber[idn]=vv
+            this.valueString[vv.idString]=vv
+            this.keysNumber[idn]=vv.idString
+            this.keysString[vv.idString]=idn
+        }
+    }
     insert_def(def:Record<string,TP>){
         for(const dv of Object.values(def)){
             const idn=Object.keys(this.keysNumber).length
@@ -75,6 +89,12 @@ export class DefinitionsMerge<TP extends Definition>{
             this.keysNumber[idn]=dv.idString
             this.keysString[dv.idString]=idn
         }
+    }
+    clear(){
+        this.keysNumber={}
+        this.keysString={}
+        this.valueNumber={}
+        this.valueString={}
     }
 }
 export class Tree<Type,Base> extends DefinitionsSimple<Type,Base>{
@@ -187,34 +207,39 @@ export interface Language {
     values: Record<string, any>
     all_values?: string
 }
-
 export class TranslationManager {
     private _language: Language
+    default_language?: Language
 
-    constructor(language: Language) {
+    constructor(language: Language, defaultLanguage?: Language) {
         this._language = language
+        this.default_language = defaultLanguage
     }
-
     setLanguage(language: Language) {
         this._language = language
     }
-
+    setDefaultLanguage(language: Language) {
+        this.default_language = language
+    }
     getLanguage(): Language {
         return this._language
     }
     get(key: string, replace: Record<string, string> = {}): string {
-        const lang = this._language
-        if (lang.all_values !== undefined) {
-            return this._interpolate(lang.all_values, replace)
+        let value = this._getFromLang(this._language, key)
+        if ((value === undefined || typeof value !== "string") && this.default_language) {
+            value = this._getFromLang(this.default_language, key)
         }
-
-        const value = this._resolveValue(lang.values, key.split("."))
         if (value === undefined || typeof value !== "string") {
             console.warn(`[TranslationManager] Missing translation for "${key}"`)
             return key
         }
-
-        return this._interpolate(value, replace);
+        return this._interpolate(value, replace)
+    }
+    private _getFromLang(lang: Language, key: string): any {
+        if (lang.all_values !== undefined) {
+            return lang.all_values
+        }
+        return this._resolveValue(lang.values, key.split("."))
     }
     private _resolveValue(obj: Record<string, any>, path: string[]): any {
         let current: any = obj
@@ -226,26 +251,26 @@ export class TranslationManager {
     }
     private _interpolate(template: string, values: Record<string, string>): string {
         let result = template
-
         result = result.replace(/\$\{([^}]+)\}/g, (_, key) => {
-            return values[key] ?? "${" + key + "}";
+            return values[key] ?? "${" + key + "}"
         })
-
         result = result.replace(/\$\[([^\]]+)\]/g, (_, key) => {
-            return values[key] ?? "$[" + key + "]";
+            return values[key] ?? "$[" + key + "]"
         })
-
         return result
     }
 }
 export interface FrameTransform{
     scale?:number
+    scale2?:Vec2
     hotspot?:Vec2
     rotation?:number
     position?:Vec2
     visible?:boolean
     zIndex?:number
     tint?:number
+    alpha?:number
+    layer?:number
 }
 export type FrameDef={image?:string}&FrameTransform
 export type KeyFrameSpriteDef={
@@ -254,6 +279,10 @@ export type KeyFrameSpriteDef={
 export interface AKeyFrameSpriteAction extends FrameTransform {
     type: "sprite"
     image?: string
+    fuser: string
+}
+export interface AKeyFrameTransformAction extends FrameTransform {
+    type: "transform"
     fuser: string
 }
 
@@ -267,6 +296,7 @@ export interface AKeyFrameTweenAction {
 export type AKeyFrameAction =
     | AKeyFrameSpriteAction
     | AKeyFrameTweenAction
+    | AKeyFrameTransformAction
 export interface AKeyFrame{
     actions:AKeyFrameAction[]
     time:number

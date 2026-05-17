@@ -24,6 +24,6 @@ export class Drone extends AbstractBullet{
 
             v2m.lerp(this.velocity,move,1/(1+dt*1000))
         }
-        this.dirtyPart=true
+        this.net_sync.part=true
     }
 }

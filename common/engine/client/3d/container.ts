@@ -5,7 +5,7 @@ import { Color, ColorM } from "../../core/math/color.ts"
 import { ResourcesManager } from "../resources/resources.ts"
 import { Renderer } from "../rendering/renderer.ts"
 import { Angle } from "../../core/math/geometry.ts"
-import { Matrix, matrix4 } from "../../core/definition/matrix.ts";
+import { Matrix, matrix4 } from "../../core/math/matrix.ts";
 export interface CamA3{
     matrix:Matrix
     position:Vec3
@@ -133,7 +133,7 @@ export abstract class Container3DObject {
     set_frame(frame:FrameDef,resources:ResourcesManager){
         if(frame.hotspot)this.hotspot=v2.clone(frame.hotspot)
         if(frame.visible)this.visible=frame.visible
-        if(frame.image)this.frame=resources.get_sprite(frame.image)
+        if(frame.image)this.frame=resources.get_frame(frame.image)
     }
     material:Material3D
     override draw(cam:CamA3,renderer: Renderer): void {

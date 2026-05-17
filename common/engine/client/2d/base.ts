@@ -1,42 +1,59 @@
 import { v2, v2m, Vec2, Vec2M } from "../../core/math/vec2.ts"
-
-import {Vec4M,Color, ColorM} from "../../core/math/color.ts"
-
+import { Vec4M, Color, ColorM} from "../../core/math/color.ts"
 import { ResourcesManager } from "../resources/resources.ts"
 import { type Context2D } from "../rendering/context.ts";
 import { Renderer } from "../rendering/renderer.ts";
-import { Matrix } from "../../core/definition/matrix.ts";
+import { Matrix } from "../../core/math/matrix.ts";
+import { type Container2D } from "./container.ts";
+import { FrameTransform } from "../../core/definition/definitions.ts";
+import { Rect } from "../../core/math/geometry.ts";
 
 export interface CamA{
     matrix:Matrix
 
     position:Vec2
     size:Vec2
+    layer:number
 
     meter_size:number
     center_pos:boolean
 
     ctx:Context2D
     renderer:Renderer
+
+    rect:Rect
+
+    visible_function?:(obj:Container2DObject)=>boolean
+    sort_function:(a:Container2DObject,b:Container2DObject)=>number
 }
 export abstract class Container2DObject {
-    abstract object_type: string;
+    abstract object_type: string
 
-    parent?: Container2D;
-    _zIndex: number = 0;
+    parent?: Container2D
+    id_on_parent:number=0
 
-    has_update:boolean=false
+    _layer: number = 0
+    get layer():number{
+        return this._layer
+    }
+    set layer(val:number){
+        if(val===this._layer)return
+        this._layer=val
+        if(this.parent){
+            this.parent.dirty_zindex=true
+        }
+    }
+    _zIndex: number = 0
     get zIndex():number{
         return this._zIndex
     }
     set zIndex(val:number){
+        if(val===this._zIndex)return
         this._zIndex=val
         if(this.parent){
-            this.parent.updateZIndex()
+            this.parent.dirty_zindex=true
         }
     }
-
-    id_on_parent:number=0
 
     _position: Vec2M
     get position(): Vec2 {
@@ -59,7 +76,7 @@ export abstract class Container2DObject {
     }
     set rotation(val:number){
         this._rotation=val
-        this.update_real()
+        this.dirty_reals=true
     }
 
     _tint: Vec4M
@@ -77,18 +94,28 @@ export abstract class Container2DObject {
 
     sync_rotation:boolean=true
 
+    _has_update:boolean=false
+    get has_update():boolean{
+        return this._has_update
+    }
+    set has_update(val:boolean){
+        this._has_update=val
+        if(this.parent)this.parent.dirty_children=true
+    }
+
     _visible:boolean=true
     get visible():boolean{
         return this._visible
     }
     set visible(val:boolean){
         this._visible=val
-        if(this.parent)this.parent.update_visibility()
+        if(this.parent)this.parent.dirty_children=true
     }
 
     destroyed:boolean=false
     destroy(){
         this.destroyed=true
+        this.visible = false; 
         if(this.parent){
             let i=this.parent.children.indexOf(this)
             if(i!==-1)this.parent.children.splice(i,1)
@@ -100,19 +127,18 @@ export abstract class Container2DObject {
     }
 
     constructor(){
-        const bid=this.update_real.bind(this)
+        const bid=()=>{
+            this.dirty_reals=true
+        }
         this._position=new Vec2M(0,0,bid)
         this._scale=new Vec2M(1,1,bid)
         this._tint=new Vec4M(1,1,1,1,bid)
     }
 
-    update_v=true
+    dirty_reals=true
     update_real(){
-        this.update_v=true
-    }
-    update_visual(){
         if (this.parent&&!this.parent.object_group) {
-            this._real_scale = v2.mult(this.parent._real_scale, this._scale);
+            v2m.mul(this._real_scale,this.parent._real_scale, this._scale)
             if(this.sync_rotation){
                 this._real_rotation = this.parent._real_rotation + this._rotation
                 v2m.mul(this._real_position,this._position,this.parent._real_scale)
@@ -123,7 +149,6 @@ export abstract class Container2DObject {
                 v2m.mul(this._real_position,this.parent._real_scale, this._position)
                 v2m.add(this._real_position,this._real_position,this.parent._real_position)
             }
-
             ColorM.mult(this._real_tint,this._tint,this.parent._tint)
         } else {
             v2m.set(this._real_position,this._position._x,this._position._y)
@@ -139,58 +164,23 @@ export abstract class Container2DObject {
     update(_dt:number,_resources:ResourcesManager): void {
     }
     draw_super(){
-        if(this.update_v){
-            this.update_visual()
-            this.update_v=false
+        if(this.dirty_reals){
+            this.update_real()
+            this.dirty_reals=false
         }
     }
-    abstract draw(cam:CamA): Promise<void>;
-}
-export class Container2D extends Container2DObject{
-    object_type:string="container2d"
-    children:Container2DObject[]=[]
-
-    update_children:Container2DObject[]=[]
-    visible_children:Container2DObject[]=[]
-    override has_update: boolean=true
-
-    object_group:boolean=false
-
-    update_visibility(){
-        this.visible_children = this.children.filter(c => c._visible)
+    get_rect():Rect{
+        return {min:v2.zero,max:v2.zero}
     }
-    override update(dt:number,resources:ResourcesManager){
-        super.update(dt,resources);
-        for (const c of this.update_children) c.update(dt,resources);
+    transform_frame(frame:FrameTransform){
+        if(frame.scale!==undefined)this.scale=v2(frame.scale,frame.scale)
+        if(frame.scale2!==undefined)this.scale=frame.scale2
+        if(frame.rotation!==undefined)this.rotation=frame.rotation
+        if(frame.visible!==undefined)this.visible=frame.visible
+        if(frame.zIndex!==undefined)this.zIndex=frame.zIndex
+        if(frame.position!==undefined)this.position=v2.clone(frame.position)
+        if(frame.layer!==undefined)this.layer=frame.layer
+        this.dirty_reals=true
     }
-    override update_real(): void {
-        super.update_real()
-        for (const c of this.children) c.update_real()
-    }
-    updateZIndex(){
-        this.children.sort((a, b) => a.zIndex - b.zIndex || a.id_on_parent - b.id_on_parent);
-    }
-    async draw(cam:CamA,objects?:Container2DObject[]):Promise<void>{
-        this.draw_super()
-        if(!objects)objects=this.visible_children
-        for(let o =0;o<objects.length;o++){
-            const c=objects[o]
-            if(c.visible)await c.draw(cam)
-        }
-    }
-    add_child(c:Container2DObject){
-        c.id_on_parent=this.children.length+1
-        c.parent=this
-        this.children.push(c)
-        if(c.has_update){
-            this.update_children.push(c)
-        }
-        if(c._visible){
-            this.visible_children.push(c)
-        }
-        c.update_real()
-    }
-    constructor(){
-        super()
-    }
+    abstract draw(cam:CamA): void;
 }

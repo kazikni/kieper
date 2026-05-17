@@ -38,7 +38,7 @@ export class AbstractBullet extends LivingEntity{
         this.physical_data.color=GameColors.Red
         this.physical_data.sides=1
         this.physical_data.radius=1
-        this.netSync.deletion=false
+        this.net_sync.enabled.deletion=false
     }
     set_definition(def:BulletDefinition,owner:Tank){
         this.bullet_data.damage=def.damage
@@ -68,12 +68,11 @@ export class AbstractBullet extends LivingEntity{
     override create(args: Record<string, any>): void {
         super.create(args)
 
-        if(this.bullet_data.type===2)this.netSync.deletion=true
+        if(this.bullet_data.type===2)this.net_sync.enabled.deletion=true
     }
     override update(dt:number){
         super.update(dt)
         this.old_position=v2.clone(this.position)
-        this.manager.cells.updateObject(this)
         const objs:GameObject[]=this.manager.cells.get_objects(this.hitbox,this.layer)
         const hitTargets:Set<number>=new Set()
         for(const obj of objs){
@@ -83,8 +82,8 @@ export class AbstractBullet extends LivingEntity{
                 case GameObjectType.Shape:
                 case GameObjectType.Tank:{
                     if(this.owner!==obj){
-                        const collision=obj.hitbox.overlapCollision(this.hitbox)
-                        if (collision.length > 0) {
+                        const collision=obj.hitbox.overlap_collision(this.hitbox)
+                        if (collision) {
                             hitTargets.add(obj.id)
                             if(!this.hitTargets.has(obj.id)){
                                 if(this.bullet_data.type!==2){
@@ -93,26 +92,22 @@ export class AbstractBullet extends LivingEntity{
                                 const dmg = this.bullet_data.damage
                                 this.piercing_damage({count:(obj as LivingEntity).health_data.health});
                                 (obj as LivingEntity).piercing_damage({ count: dmg, owner:this.owner, source:this });
-
-                                this.dirtyPart=true
+                                this.net_sync.part=true
                             }
-                        }
-
-                        for(const col of collision){
-                            v2m.add(this.position,this.position,v2.scale(col.dir,4*dt))
+                            v2m.add(this.position,this.position,v2.scale(collision.dir,4*dt))
                         }
                     }
                     break
                 }
                 case GameObjectType.Bullet:{
-                    const collision=obj.hitbox.overlapCollision(this.hitbox)
-                    if(this.bullet_data.type===2&&(obj as AbstractBullet).bullet_data.type===2){
-                        for(const col of collision){
-                            v2m.add(this.velocity,this.velocity,v2.scale(col.dir,col.pen*500*dt))
+                    const collision=obj.hitbox.overlap_collision(this.hitbox)
+                    if(collision){
+                        if(this.bullet_data.type===2&&(obj as AbstractBullet).bullet_data.type===2){
+                            v2m.add(this.velocity,this.velocity,v2.scale(collision.dir,collision.pen*500*dt))
                         }
-                    }
-                    if(this.owner!==(obj as AbstractBullet).owner&&collision.length&&!(obj as AbstractBullet).health_data.dead){
-                        this.piercing_damage({count:(obj as AbstractBullet).health_data.health})
+                        if(this.owner!==(obj as AbstractBullet).owner&&!(obj as AbstractBullet).health_data.dead){
+                            this.piercing_damage({count:(obj as AbstractBullet).health_data.health})
+                        }
                     }
                     break
                 }
@@ -122,8 +117,8 @@ export class AbstractBullet extends LivingEntity{
             this.hitTargets=hitTargets
         }
     }
-    override encode(stream: NetStream, full: boolean,is_self:boolean): void {
-        super.encode(stream,full,is_self)
+    override encode(stream: NetStream, full: boolean): void {
+        super.encode(stream,full)
         if(full){
             stream.writeUint8(this.bullet_data.type)
             if(this.bullet_data.type===1){

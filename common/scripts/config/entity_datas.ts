@@ -1,4 +1,4 @@
-import { Definition, Vec2 } from "../../engine/core.ts";
+import { Vec2 } from "../../engine/core.ts";
 import { GameColors } from "./constants.ts";
 
 export type PhysicalSubModel=({

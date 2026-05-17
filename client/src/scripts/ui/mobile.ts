@@ -24,10 +24,11 @@ export class MobileManager extends UIModule<Game>{
         rj.addEventListener("joystickend",(e)=>{
             this.game.input.firing=false
         })
+        this.dirty()
     }
     override on_update(dt: number): void {
     }
-    override on_dirty(): void {
+    dirty(): void {
         const elem=document.querySelector("#game-mobile-ui") as HTMLDivElement
         if(this.visible){
             ShowElement(elem)
@@ -39,5 +40,7 @@ export class MobileManager extends UIModule<Game>{
     }
     override on_signal(signal: string, content: any): void {
         
+    }
+    override on_clear(): void {
     }
 }

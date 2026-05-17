@@ -1,6 +1,6 @@
 import { LivingEntity } from "../abstract_objects/living_entity.ts";
 import { GameObject } from "./gameObject.ts";
-import { AbstractServerGame, Client, OfflineClientsManager } from "common/engine/core/net/server_base.ts";
+import { AbstractServerGame } from "common/engine/core/net/server_base.ts";
 import { JoinPacket } from "common/scripts/net/join_packet.ts";
 import { Player, update_net } from "../abstract_objects/player.ts";
 import { Shape } from "../abstract_objects/shape.ts";
@@ -8,7 +8,7 @@ import { ShapeManager } from "../managers/shape_manager.ts";
 import { Arena } from "./arena.ts";
 import { InputPacket } from "common/scripts/net/input_packet.ts";
 import { GameDataBase } from "common/engine/server.ts";
-import { DisconnectPacket, ID } from "common/engine/core.ts";
+import { Client, DisconnectPacket, ID, OfflineClientsManager } from "common/engine/core.ts";
 import { JoinnedPacket } from "common/scripts/net/joinned_packet.ts";
 import { SetSpectationPacket } from "common/scripts/net/set_spectation.ts";
 import { BossesManager } from "../managers/bosses_manager.ts";
@@ -80,7 +80,6 @@ export class Game extends AbstractServerGame<GameObject>{
                 cp.view_objects=[]
             }
             const r=update_net(cp.client,this,cp.spectating,cp.main_player,cp.view_objects)
-
             cp.view_objects=r[1]
             cp.client.emit(r[0])
         }

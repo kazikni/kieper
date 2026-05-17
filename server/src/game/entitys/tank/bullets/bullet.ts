@@ -14,7 +14,7 @@ export class Bullet extends AbstractBullet{
         this.physical_data.color=GameColors.Red
         this.physical_data.sides=1
         this.physical_data.radius=1
-        this.netSync.deletion=false
+        this.net_sync.enabled.deletion=false
 
         this.bullet_data.type=1
     }
@@ -31,7 +31,7 @@ export class Bullet extends AbstractBullet{
         super.set_movement(rotation)
 
         this.initial_position=v2.clone(this.position)
-        this.dirty=true
+        this.net_sync.full=true
         this.update_data()
     }
 }

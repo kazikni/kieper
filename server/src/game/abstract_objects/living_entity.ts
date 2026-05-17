@@ -46,7 +46,7 @@ export class LivingEntity extends GameObject{
     constructor(){
         super()
         this.velocity=v2.zero()
-        this.netSync.deletion=true
+        this.net_sync.enabled.deletion=true
     }
     override create(args: Record<string, any>): void {
         this.update_data()
@@ -67,7 +67,7 @@ export class LivingEntity extends GameObject{
             if(this.health_data.health!==this.health_data.max_health&&this.health_data.last_damage>=rt){
                 const regen=(0.05+(this.health_data.regen/11))*this.health_data.max_health
                 this.health_data.dirty=true
-                this.dirtyPart=true
+                this.net_sync.part=true
                 this.health_data.health=Math.min(this.health_data.max_health,this.health_data.health+(regen*dt))
             }else if(this.health_data.last_damage<rt){
                 this.health_data.last_damage+=dt
@@ -85,14 +85,17 @@ export class LivingEntity extends GameObject{
         this.health_data.health=0
         this.health_data.dead=true
         this.health_data.dirty=true
-        this.dirtyPart=true
-        this.netSync.deletion=false
+        this.net_sync.part=true
+        this.net_sync.enabled.deletion=false
         this.killer=damage.owner
         if(damage.owner)damage.owner.when_kill(this)
     }
+    damage(damage:DamageParams){
+        this.piercing_damage(damage)
+    }
     piercing_damage(damage:DamageParams){
         this.health_data.dirty=true
-        this.dirtyPart=true
+        this.net_sync.part=true
 
         this.health_data.health-=damage.count
         this.health_data.last_damage=0
@@ -114,7 +117,7 @@ export class LivingEntity extends GameObject{
         }
         return physical
     }
-    override encode(stream: NetStream, full: boolean,_is_self:boolean): void {
+    override encode(stream: NetStream, full: boolean): void {
         stream.writeBooleanGroup(this.physical_data.dirty,this.physical_data.dirtyPart,this.health_data.dirty,this.name_data.dirty)
         stream.writePos2(this.position)
         stream.writeRad(this.rotation)

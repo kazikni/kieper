@@ -22,7 +22,7 @@ export class AttributesManager extends UIModule<Game>{
     }
     override on_update(dt: number): void {
     }
-    override on_dirty(): void {
+    dirty(): void {
         const att=this.root.content.attributes as HTMLDivElement
         att.innerHTML=""
         if(this.visible){
@@ -78,5 +78,7 @@ export class AttributesManager extends UIModule<Game>{
                 this.dirty()
             }
         }
+    }
+    override on_clear(): void {
     }
 }

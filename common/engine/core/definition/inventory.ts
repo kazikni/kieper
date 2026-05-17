@@ -1,3 +1,4 @@
+import { type AbstractGame } from "../game/game.ts";
 import { random, type WeightDefinition } from "../math/random.ts";
 import { Numeric, Tags, hasTag, hasTags } from "../math/utils.ts"
 
@@ -413,17 +414,19 @@ export class InventoryCap<ItemBase extends ItemCap=ItemCap>{
     //#endregion
 }
 
-export abstract class Action<User>{
+export abstract class BaseAction<User>{
     abstract delay:number
     abstract type:number
     abstract on_execute(user:User):void
+    update(user:User,dt:number){}
     constructor(){}
 }
 
-export class ActionsManager<User>{
-    current_action?:Action<User>
+export class ActionsManager<User,Action extends BaseAction<User>>{
+    current_action?:Action
     current_delay:number=0
     user:User
+    dirty:boolean=false
     constructor(user:User){
         this.user=user
     }
@@ -431,12 +434,14 @@ export class ActionsManager<User>{
         if(this.current_action){
             this.current_action=undefined
             this.current_delay=0
+            this.dirty=true
         }
     }
-    play(action:Action<User>):void{
+    play(action:Action):void{
         if(this.current_action)return
         this.current_action=action
         this.current_delay=action.delay
+        this.dirty=true
     }
     update(deltaTime:number){
         if(this.current_action){
@@ -445,8 +450,13 @@ export class ActionsManager<User>{
                 this.current_action.on_execute(this.user)
                 this.current_action=undefined
                 this.current_delay=0
+                this.dirty=true
             }
+            this.current_action?.update?.(this.user,deltaTime)
         }
+    }
+    net_update(){
+        this.dirty=false
     }
 }
 
@@ -461,14 +471,14 @@ interface LootTableObject{
     max:number
     content:LootTableItem[]
 }
-export type LootTable=LootTableObject|LootTableItem[]|LootTableItem[][]
+export type LootTable=string|LootTableObject|LootTableItem[]|LootTableItem[][]
 export type LootTableItemRet<Item>={
     count:number
     item:Item
 }
 export class LootTablesManager<TP,Aditional>{
     tables:Map<string,LootTable>=new Map()
-    get_item:(id:string,count:number,aditional:Aditional)=>LootTableItemRet<TP>[]
+    get_item:(id:string,count:number,aditional:Aditional,game:AbstractGame<any>)=>LootTableItemRet<TP>[]
     constructor(get_item:(id:string,count:number,aditional:Aditional)=>LootTableItemRet<TP>[]){
         this.get_item=get_item
     }
@@ -480,53 +490,54 @@ export class LootTablesManager<TP,Aditional>{
             this.tables.set(t,tables[t])
         }
     }
-    get_loot(table:string,aditional:Aditional):LootTableItemRet<TP>[]{
+    get_loot(table:LootTable,aditional:Aditional,game:AbstractGame<any>):LootTableItemRet<TP>[]{
         const ret:LootTableItemRet<TP>[]=[]
-        const lt=this.tables.get(table)
+        const lt=typeof table==="string"?this.tables.get(table):table
         if(!lt){
             return []
         }
+        const rand=random
         const multiLoot=Array.isArray(lt)&&lt.length>0&&Array.isArray(lt[0])
         if(Array.isArray(lt)&&!multiLoot){
-            const obj=random.weight2(lt as LootTableItem[])
+            const obj=rand.weight2(lt as LootTableItem[])
             if(obj){
                 if(obj.item){
-                    ret.push(...this.get_item(obj.item,obj.count??1,aditional))
+                    ret.push(...this.get_item(obj.item,obj.count??1,aditional,game))
                 }
                 if(obj.table&&obj.table!==table){
                     const c=obj.count??1
                     for(let i=0;i<c;i++){
-                        ret.push(...this.get_loot(obj.table,aditional))
+                        ret.push(...this.get_loot(obj.table,aditional,game))
                     }
                 }
             }
         }else if(multiLoot){
             for(const slt of (lt as LootTableItem[][])){
-                const obj=random.weight2(slt)
+                const obj=rand.weight2(slt)
                 if(obj){
                     if(obj.item){
-                        ret.push(...this.get_item(obj.item,obj.count??1,aditional))
+                        ret.push(...this.get_item(obj.item,obj.count??1,aditional,game))
                     }
                     if(obj.table&&obj.table!==table){
                         const c=obj.count??1
                         for(let i=0;i<c;i++){
-                            ret.push(...this.get_loot(obj.table,aditional))
+                            ret.push(...this.get_loot(obj.table,aditional,game))
                         }
                     }
                 }
             }
         }else{
-            const count=random.int((lt as LootTableObject).min,(lt as LootTableObject).max)
+            const count=rand.int((lt as LootTableObject).min,(lt as LootTableObject).max)
             for(let i=0;i<count;i++){
-                const obj=random.weight2((lt as LootTableObject).content)
+                const obj=rand.weight2((lt as LootTableObject).content)
                 if(obj){
                     if(obj.item){
-                        ret.push(...this.get_item(obj.item,obj.count??1,aditional))
+                        ret.push(...this.get_item(obj.item,obj.count??1,aditional,game))
                     }
                     if(obj.table&&obj.table!==table){
                         const c=obj.count??1
                         for(let i=0;i<c;i++){
-                            ret.push(...this.get_loot(obj.table,aditional))
+                            ret.push(...this.get_loot(obj.table,aditional,game))
                         }
                     }
                 }

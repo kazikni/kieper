@@ -23,6 +23,7 @@ export interface ABParticle2Config{
     direction:number
     life_time:number
     zIndex?:number
+    layer?:number
     angle?:number
     scale?:number
     tint?:Color
@@ -51,6 +52,7 @@ export interface RainParticle2Config{
     position:Vec2
     rotation:number
     speed?:number
+    decay_time?:number
 }
 export class ABParticle2D extends ClientParticle2D{
     ticks=0
@@ -66,6 +68,7 @@ export class ABParticle2D extends ClientParticle2D{
         this.sprite.scale=v2(config.scale??1,config.scale??1)
         this.sprite.rotation=config.angle??0
         this.sprite.zIndex=config.zIndex??0
+        this.sprite.layer=config.layer??0
         if(config.tint){
             this.sprite.tint=ColorM.clone(config.tint)
         }
@@ -96,8 +99,7 @@ export class ABParticle2D extends ClientParticle2D{
         if(this.config.to?.tint){
             this.sprite.tint=ColorM.lerp(this.config.tint??ColorM.default.white,this.config.to.tint,tt)
         }
-        const vel=v2.from_RadAngle(dire)
-        v2m.scale(vel,vel,speed*dt)
+        const vel=v2.from_RadAngle(dire,speed*dt)
         
         this.sprite._position._x+=vel.x
         this.sprite.position.y+=vel.y
@@ -128,7 +130,7 @@ export class RainParticle2D extends ClientParticle2D{
         v2m.single(this.sprite.scale,config.scale?.main??1)
         this.sprite.rotation=config.rotation
         this.sprite.hotspot=v2(1,.5)
-        this.vel=v2.scale(v2.from_RadAngle(config.rotation),config.speed??12)
+        this.vel=v2.from_RadAngle(config.rotation,config.speed??12)
         if(config.zindex){
             this.sprite.zIndex=config.zindex.main
         }
@@ -142,12 +144,6 @@ export class RainParticle2D extends ClientParticle2D{
                 if(this.ticks>=this.lifetime){
                     this.ticks=0
                     this.stage=1
-                    this.sprite.set_frame(this.config.frame.wave,(this.manager.game as unknown as ClientGame).resources)
-                    v2m.zero(this.sprite.scale)
-                    this.sprite.hotspot=CenterHotspot
-                    if(this.config.zindex){
-                        this.sprite.zIndex=this.config.zindex.wave
-                    }
                 }
                 v2m.add_component(this.sprite.position,this.vel.x*dt,this.vel.y*dt)
                 this.ticks+=dt
@@ -155,6 +151,21 @@ export class RainParticle2D extends ClientParticle2D{
                 break
             }
             case 1:{
+                this.sprite.tint.a=1-this.ticks
+                this.sprite.scale=v2.sub(this.sprite.scale,v2(dt*(this.config.decay_time??7),0))
+                if(this.sprite.scale.x<=0){
+                    this.ticks=0
+                    this.stage=2
+                    this.sprite.set_frame(this.config.frame.wave,(this.manager.game as unknown as ClientGame).resources)
+                    v2m.single(this.sprite.scale,0.1)
+                    this.sprite.hotspot=CenterHotspot
+                    if(this.config.zindex){
+                        this.sprite.zIndex=this.config.zindex.wave
+                    }
+                }
+                break
+            }
+            case 2:{
                 if(this.ticks>=1){
                     this.destroyed=true
                 }

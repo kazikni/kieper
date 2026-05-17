@@ -25,7 +25,6 @@ export class ConnectionLimiter {
         const now = Date.now()
         let entry = this.map.get(ip)
 
-        // janela nova
         if (!entry || now >= entry.resetAt) {
             entry = {
                 count: 0,
@@ -88,7 +87,7 @@ export abstract class SelfGameWorker<
         case WorkerMsg.Begin:{
             this.id = msg.id
             this.config = msg.config
-            this.server = new Server(msg.port)
+            this.server = new Server(msg.port,msg.https,msg.certFile,msg.keyFile)
             this.onBegin()
             setTimeout(this.run.bind(this),300)
             break
@@ -124,9 +123,16 @@ export abstract class SelfGameWorker<
         this.game?.stop()
         this.clients_manager.clear()
         this.game = undefined
+
+        this.sendData({
+            running:false
+        } as GameData)
     }
     run(){
         this.server?.run()
+        this.sendData({
+            running:false
+        } as GameData)
     }
     canConnect(ip:string){
         if (this.limiter) {

@@ -62,7 +62,7 @@ export class Shape extends LivingEntity{
         return this.shape_manager.add_shape(child,this.position)
     }
     transmutate(){
-        this.dirtyPart=true
+        this.net_sync.part=true
         this.die({count:this.health_data.health})
     }
     AI(dt:number){
@@ -88,28 +88,23 @@ export class Shape extends LivingEntity{
             if(obj.id===this.id||obj.destroyed)continue
             switch(obj.number_type){
                 case GameObjectType.Tank:{
-                    const collision=this.hitbox.overlapCollision(obj.hitbox)
-                    if(collision.length){
-                        for(const col of collision){
-                            v2m.sub(this.velocity,this.velocity,v2.scale(col.dir,1))
-                        }
+                    const collision=this.hitbox.overlap_collision(obj.hitbox)
+                    if(collision){
+                        v2m.sub(this.velocity,this.velocity,v2.scale(collision.dir,1))
                         this.body_damage_in((obj as LivingEntity),dt,this.damage_data.body_damage)
                     }
                     break
                 }
                 case GameObjectType.LivingEntity:
                 case GameObjectType.Shape:{
-                    const collision=this.hitbox.overlapCollision(obj.hitbox)
-                    for(const col of collision){
-                        v2m.sub(this.velocity,this.velocity,v2.scale(col.dir,900*dt))
-                    }
+                    const collision=this.hitbox.overlap_collision(obj.hitbox)
+                    if(collision)v2m.sub(this.velocity,this.velocity,v2.scale(collision.dir,900*dt))
                     break
                 }
             }
         }
-        this.dirtyPart=true
+        this.net_sync.part=true
         this.position=this.base_hitbox.clamp(this.position,v2.zero,this.game.arena.size)
-        this.manager.cells.updateObject(this)
     }
     set_data(rarity_level:number,modifier_kind:number=0){
         switch(modifier_kind){

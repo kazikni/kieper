@@ -11,7 +11,7 @@ export class ScoreManager extends UIModule<Game>{
     }
     override on_update(dt: number): void {
     }
-    override on_dirty(): void {
+    dirty(): void {
         let con = this.root.content["level-bar-container"];
         let bar=con.querySelector("#level-bar") as HTMLDivElement
         let span=con.querySelector(".span") as HTMLDivElement
@@ -32,6 +32,8 @@ export class ScoreManager extends UIModule<Game>{
     }
 
     override on_destroy(): void {
+    }
+    override on_clear(): void {
     }
     override on_signal(signal: string, content: any): void {
         if(signal==="update_private"){

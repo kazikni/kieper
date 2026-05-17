@@ -1,11 +1,10 @@
-import { Material, WebglRenderer } from "../rendering/renderer.ts";
+import { Material } from "../rendering/renderer.ts";
 import { Color } from "../../core/math/color.ts";
 import { model2d, Model2D } from "../../core/definition/models.ts";
 import { CamA, Container2DObject } from "./base.ts";
 import { v2, Vec2 } from "../../core/math/vec2.ts";
-import { SmoothShape2D } from "../../core/math/geometry.ts";
+import { Rect, SmoothShape2D } from "../../core/math/geometry.ts";
 import { Hitbox2D, HitboxType2D } from "../../core/math/hitbox.ts";
-import { Batcher } from "../rendering/batcher.ts";
 type Graphics2DCommand =
   | { type: 'fillMaterial'; mat:Material }
   | { type: 'fillColor'; color:Color }
@@ -23,8 +22,6 @@ export class Graphics2D extends Container2DObject {
 
     command: Graphics2DCommand[] = [];
     paths:number[][]=[]
-
-    batcher?:Batcher
 
     beginPath(): this {
         this.current_path.length=0
@@ -101,50 +98,30 @@ export class Graphics2D extends Container2DObject {
                 break
         }
     }
-    color_material?:Material
-    override draw(cam:CamA): Promise<void> {
-        return new Promise<void>((resolve) => {
-            this.draw_super()
-            const gl = cam.renderer as WebglRenderer;
-            if(!this.color_material)this.color_material=gl.factorys2D.simple_batch.create({})
-            let currentMat: Material=this.color_material
-            let current_color: Color={r:0,g:0,b:0,a:1}
-            let currentModel:Model2D=model2d.zero()
-            if(!this.batcher){
-                this.batcher=new Batcher(cam.renderer)
-            }
-
-            for (const cmd of this.command) {
-                switch (cmd.type) {
-                    case "fillMaterial":
-                        currentMat=cmd.mat
-                        break
-                    case "fillColor":
-                        current_color=cmd.color
-                        currentMat=this.color_material
-                        break
-                    case "fill":
-                        this.batcher.draw_model2d(currentMat,currentModel,this._real_position,this._real_scale,{
-                            color:{
-                                value:[current_color.r,current_color.g,current_color.b,current_color.a]
-                            }
-                        })
-                        break
-                    case "model": {
-                        this.batcher.draw_model2d(currentMat,cmd.model,this._real_position,this._real_scale,{
-                            color:{
-                                value:[current_color.r,current_color.g,current_color.b,current_color.a]
-                            }
-                        })
-                        break;
-                    }
-                    case "path":
-                        currentModel=cmd.path
-                        break
+    override draw(cam:CamA): void {
+        this.draw_super()
+        let currentModel:Model2D=model2d.zero()
+        for (const cmd of this.command) {
+            switch (cmd.type) {
+                case "fillMaterial":
+                    break
+                case "fillColor":
+                    cam.ctx.fill_style=cmd.color
+                    break
+                case "fill":
+                    cam.ctx.fill_model(currentModel,this._real_position,this._real_scale,0)
+                    break
+                case "model": {
+                    cam.ctx.fill_model(cmd.model,this._real_position,this._real_scale,0)
+                    break;
                 }
+                case "path":
+                    currentModel=cmd.path
+                    break
             }
-            this.batcher.render(cam.matrix)
-            resolve()
-        })
+        }
+    }
+    override get_rect(): Rect {
+        return {min:v2.infinity_neg,max:v2.infinity}
     }
 }

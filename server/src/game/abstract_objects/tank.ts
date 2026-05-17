@@ -67,9 +67,8 @@ export class Tank extends LivingEntity{
         }
         if(!this.old_pos||this.position.x!==this.old_pos.x||this.position.y!==this.old_pos.y){
             this.old_pos=v2.clone(this.position)
-            this.manager.cells.updateObject(this)
             this.position=this.base_hitbox.clamp(this.position,v2.zero,this.game.arena.size)
-            this.dirtyPart=true
+            this.net_sync.part=true
         }
         const objects:GameObject[]=this.manager.cells.get_objects(this.hitbox,this.layer)
         for(const obj of objects){
@@ -79,18 +78,15 @@ export class Tank extends LivingEntity{
                 case GameObjectType.LivingEntity:
                 case GameObjectType.Shape:
                 case GameObjectType.Tank:{
-                    const collision=this.hitbox.overlapCollision(obj.hitbox)
-                    if(collision.length){
-                        for(const col of collision){
-                            v2m.sub(this.velocity,this.velocity,v2.scale(col.dir,v2.len(v2.add((obj as LivingEntity).velocity,this.velocity))*dt))
-                        }
+                    const collision=this.hitbox.overlap_collision(obj.hitbox)
+                    if(collision){
+                        v2m.sub(this.velocity,this.velocity,v2.scale(collision.dir,v2.len(v2.add((obj as LivingEntity).velocity,this.velocity))*dt))
                         this.body_damage_in((obj as LivingEntity),dt,this.damage_data.body_damage,this)
                     }
                     break
                 }
             }
         }
-
         for(const b of this.barrels){
             b.tick(dt)
         }
@@ -135,6 +131,6 @@ export class Tank extends LivingEntity{
         }
         this.def=tank
 
-        this.dirty=true
+        this.net_sync.full=true
     }
 }

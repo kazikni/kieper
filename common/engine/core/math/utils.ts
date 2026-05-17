@@ -6,7 +6,9 @@ import { v2, Vec2 } from "./vec2.ts";
 export const halfpi=Math.PI/2
 
 export type ID=number
-
+export function joinPath(...p: string[]) {
+    return p.join("/").replace(/\/+/g, "/")
+}
 export function splitPath(path:string):string[]{
     const ret=path.split(/[\\/]/)
     for(let i=0;i<ret.length;i++){
@@ -92,15 +94,42 @@ export class SignalManager {
     }
 }
 
+export class TicksProfiler {
+    data: Record<number, {
+        delta: number
+        start: number
+    }> = {}
+
+    enabled = true
+
+    start(id:number) {
+        if (!this.enabled) return
+        if(!this.data[id])this.data[id]={
+            delta:0,
+            start:0,
+        }
+        this.data[id].start=performance.now()
+    }
+    end(id:number) {
+        if (!this.enabled) return
+        if (!this.data[id]) return
+
+        this.data[id].delta = performance.now() - this.data[id].start
+        this.data[id].start=0
+    }
+}
 export class Clock {
     private frameDuration: number;
     private lastFrameTime: number;
+    accumulator:number=0
     public timeScale: number;
     public callback: (dt:number)=>void;
     public intervals:Map<number,(dt:number)=>void>=new Map()
 
     running:boolean=false
     tps:number=60
+
+    profiler:TicksProfiler=new TicksProfiler()
 
     constructor(targetFPS: number, timeScale: number, callback: (dt:number)=>void) {
         this.frameDuration = 1000 / targetFPS
@@ -109,9 +138,11 @@ export class Clock {
         this.timeScale = timeScale
         this.callback = callback
         this.tick = this.tick.bind(this)
+
+        this.profiler.enabled=true
     }
 
-    private interval:number=0
+    private interval?:number=undefined
 
     add_interval(cb:(dt:number)=>void):number{
         let id=0
@@ -125,51 +156,52 @@ export class Clock {
     clear_interval(id:number){
         if(this.intervals.has(id))this.intervals.delete(id)
     }
-    tick(currentTime?: number) {
-        if (this.running) {
-            if (currentTime === undefined) currentTime = performance.now();
-
+    tick(){
+        if(this.running){
+            this.profiler.start(0)
+            const currentTime = performance.now();
             const elapsedTime = currentTime - this.lastFrameTime;
-            this.lastFrameTime = currentTime;
+            this.lastFrameTime = currentTime
 
-            const dt = (elapsedTime / 1000) * this.timeScale;
+            const dt = (elapsedTime / 1000) * this.timeScale
 
             this.callback(dt);
             for (const i of this.intervals.values()) {
                 i(dt);
             }
-
-            self.requestAnimationFrame(this.tick)
+            this.profiler.end(0)
+        }
+    }
+    _tick(){
+        if(this.running){
+            this.tick()
+            self.requestAnimationFrame(this._tick)
         }
     }
     public start() {
         if(!this.running){
+            this.running=true
+
+            this.frameDuration=1000/this.tps
+            this.lastFrameTime = performance.now()
             this.interval=setInterval(() => {
-                const currentTime = Date.now()
-                const elapsedTime = currentTime - this.lastFrameTime
-                this.lastFrameTime = Date.now()
-                const dt=(elapsedTime/1000)*this.timeScale
-                this.callback(dt)
-                for(const i of this.intervals.values()){
-                    i(dt)
-                }
+                this.tick()
             }, this.frameDuration)
         }
     }
     public startRAF() {
         if (!this.running) {
             this.running = true;
-            this.lastFrameTime = performance.now()
-            this.tps=60
-            this.frameDuration=1000/this.tps
 
-            self.requestAnimationFrame(this.tick.bind(this))
+            this._tick=this._tick.bind(this)
+            this.lastFrameTime = performance.now()
+            this.frameDuration=1000/this.tps
+            self.requestAnimationFrame(this._tick)
         }
     }
     public stop(){
         this.running=false
-        if(!this.running)
-        clearInterval(this.interval)
+        if(this.interval!==undefined)clearInterval(this.interval)
     }
 }
 
@@ -185,7 +217,46 @@ export interface Cloneable<T> {
 }
 // deno-lint-ignore no-explicit-any
 export type Func = (...args: any[]) => unknown;
+export function setDeep(obj:any,path:string,value:any,split:string="."){
+    const parts=path.split(split)
+    let cur=obj
 
+    for(let i=0;i<parts.length-1;i++){
+        if(!cur[parts[i]])cur[parts[i]]={}
+        cur=cur[parts[i]]
+    }
+
+    cur[parts[parts.length-1]]=value
+}
+export function getDeep(obj:any,path:string,split:string="."){
+    const parts=path.split(split)
+    let cur=obj
+
+    for(const p of parts){
+        if(!cur)return undefined
+        cur=cur[p]
+    }
+
+    return cur
+}
+export function deleteDeep(obj:any,path:string,split:string="."){
+    const parts=path.split(split)
+    let cur=obj
+
+    for(let i=0;i<parts.length-1;i++){
+        cur=cur?.[parts[i]]
+        if(!cur)return false
+    }
+
+    const key=parts[parts.length-1]
+
+    if(cur && key in cur){
+        delete cur[key]
+        return true
+    }
+
+    return false
+}
 export function cloneDeep<T>(object: T): T {
     const clonedNodes = new Map<unknown, unknown>();
 
@@ -270,6 +341,7 @@ export function mergeDeep<T>(target: T, ...sources: Array<DeepPartial<T>>): T {
     ...Object.keys(source),
     ...Object.getOwnPropertySymbols(source) as (keyof T & symbol)[]
   ]) {
+    //@ts-ignore
     const srcVal = source[key];
     const tgtVal = (target as any)[key];
 
@@ -437,7 +509,7 @@ export function getPatterningShape(
         const tauFrac = Math.PI / points;
         return (radius: number, offset = 0): Vec2[] => Array.from(
             { length: points },
-            (_, i) => v2.scale(v2.from_RadAngle(i * tauFrac + offset), radius)
+            (_, i)=>v2.from_RadAngle(i * tauFrac + offset, radius)
         );
     };
 
@@ -596,6 +668,18 @@ export const Numeric={
     loop(value: number, min: number, max: number): number {
         const range = max - min;
         return ((value - min) % range + range) % range + min;
+    },
+    loop_rad(value: number): number {
+        const min = 0;
+        const max = Math.PI * 2;
+        const range = max - min;
+        return ((value - min) % range + range) % range + min;
+    },
+    loop_deg(value: number): number {
+        const min = 0;
+        const max = 360;
+        const range = max - min;
+        return ((value - min) % range + range) % range + min;
     }
 }
 
@@ -634,3 +718,14 @@ export class IPLocation{
         :`${this.aditional}`
     }
 }
+export async function importFromString(code: string) {
+    const blob = new Blob([code], { type: "text/javascript" })
+    const url = URL.createObjectURL(blob)
+
+    try {
+        return await import(url)
+    } finally {
+        URL.revokeObjectURL(url)
+    }
+}
+export const sleep = (ms: number) => new Promise(res => setTimeout(res, (ms*1000)))
